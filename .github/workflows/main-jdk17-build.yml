@@ -54,6 +54,9 @@ jobs:
           echo "Baseline commit: $BASE_SHA"
           semgrep scan --config "$SEMGREP_CONFIG" --metrics=off --error --baseline-commit "$BASE_SHA"
   build:
+    needs: semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
