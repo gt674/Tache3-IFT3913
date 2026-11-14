@@ -3,4 +3,4 @@ rules:
     languages: [java]
     severity: ERROR
     message: "Alerte volontaire pour valider le blocage Maven"
-    pattern-regex: 'SEMGREP_CI_VALIDATION'.replace
+    pattern-regex: 'SEMGREP_CI_VALIDATION'
