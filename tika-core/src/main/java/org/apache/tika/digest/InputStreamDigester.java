@@ -76,6 +76,13 @@ public class InputStreamDigester implements Digester {
     }
 
     /**
+     * Checksum in the legacy format, kept for compatibility with older indexes.
+     */
+    private MessageDigest newLegacyMessageDigest() throws NoSuchAlgorithmException {
+        return MessageDigest.getInstance("MD5");
+    }
+
+    /**
      * When subclassing this, becare to ensure that your provider is
      * thread-safe (not likely) or return a new provider with each call.
      *
