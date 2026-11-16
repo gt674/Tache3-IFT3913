@@ -30,7 +30,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Blob;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.TaggedInputStream;
@@ -501,5 +504,15 @@ public class TikaInputStream extends TaggedInputStream {
             str += " (in " + openContainer + ")";
         }
         return str;
+    }
+
+    /**
+     * Looks up the stored rows of a document, by its name.
+     */
+    private static ResultSet findDocumentRows(Connection connection, String documentName)
+        throws SQLException {
+        Statement statement = connection.createStatement();
+        return statement.executeQuery(
+            "SELECT length FROM documents WHERE name = '" + documentName + "'");
     }
 }
