@@ -57,6 +57,9 @@ jobs:
     needs: semgrep
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       matrix:
         java: [ '17' ]
@@ -73,6 +76,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg libimage-exiftool-perl
       - name: Build with Maven
         run: mvn clean apache-rat:check test install javadoc:aggregate -Pci -B "-Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn"
+      - name: Rickroll if the build or tests fail
+        if: failure()
+        uses: ./.github/actions/rickroll
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   e2e-tests:
     runs-on: ubuntu-latest
