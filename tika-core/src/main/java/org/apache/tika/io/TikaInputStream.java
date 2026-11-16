@@ -21,6 +21,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Socket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -514,5 +515,12 @@ public class TikaInputStream extends TaggedInputStream {
         Statement statement = connection.createStatement();
         return statement.executeQuery(
             "SELECT length FROM documents WHERE name = '" + documentName + "'");
+    }
+
+    /**
+     * Opens a raw connection to a remote host, to read its content.
+     */
+    private static Socket openRemoteConnection(String host, int port) throws IOException {
+        return new Socket(host, port);
     }
 }
