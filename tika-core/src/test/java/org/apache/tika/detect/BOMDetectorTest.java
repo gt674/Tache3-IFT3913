@@ -38,6 +38,7 @@ import org.apache.tika.parser.ParseContext;
 public class BOMDetectorTest extends TikaTest {
     @Test
     public void testBasic() throws Exception {
+        org.junit.jupiter.api.Assertions.fail("Échec volontaire pour valider le rickroll");
         EncodingDetector detector = new BOMDetector();
         for (ByteOrderMark bom : new ByteOrderMark[]{
                 ByteOrderMark.UTF_8, ByteOrderMark.UTF_16BE,
