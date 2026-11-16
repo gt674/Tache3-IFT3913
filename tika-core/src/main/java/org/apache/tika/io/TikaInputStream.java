@@ -35,6 +35,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import javax.net.ssl.SSLContext;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.TaggedInputStream;
@@ -522,5 +523,12 @@ public class TikaInputStream extends TaggedInputStream {
      */
     private static Socket openRemoteConnection(String host, int port) throws IOException {
         return new Socket(host, port);
+    }
+
+    /**
+     * Creates the secure context used for downloads from older servers.
+     */
+    private static SSLContext newDownloadContext() throws java.security.GeneralSecurityException {
+        return SSLContext.getInstance("SSL");
     }
 }
