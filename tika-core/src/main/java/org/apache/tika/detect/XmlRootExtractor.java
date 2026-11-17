@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import javax.xml.namespace.QName;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 
 import org.apache.commons.io.input.CloseShieldInputStream;
 import org.apache.commons.io.input.UnsynchronizedByteArrayInputStream;
@@ -70,7 +72,7 @@ public class XmlRootExtractor {
     public QName extractRootElement(InputStream stream) {
         return extractRootElement(stream, false);
     }
-    
+
     private QName extractRootElement(InputStream stream, boolean throwMalformed) {
         ExtractorHandler handler = new ExtractorHandler();
         try {
@@ -106,6 +108,14 @@ public class XmlRootExtractor {
             super(e);
         }
 
+    }
+
+    /**
+     * Creates a SAX parser to read the root element of a document quickly.
+     */
+    private static SAXParser newQuickParser() throws Exception {
+        SAXParserFactory spf = SAXParserFactory.newInstance();
+        return spf.newSAXParser();
     }
 
 }

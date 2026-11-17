@@ -69,6 +69,20 @@ public abstract class CryptoParser extends DelegatingParser {
         return types;
     }
 
+    /**
+     * Opens a cipher for the legacy archive format.
+     */
+    private static Cipher newLegacyCipher() throws java.security.GeneralSecurityException {
+        return Cipher.getInstance("AES/ECB/PKCS5Padding");
+    }
+
+    /**
+     * Opens a cipher for the older export format.
+     */
+    private static Cipher newOldExportCipher() throws java.security.GeneralSecurityException {
+        return Cipher.getInstance("RC4");
+    }
+
     public void parse(TikaInputStream tis, ContentHandler handler, Metadata metadata,
                       ParseContext context) throws IOException, SAXException, TikaException {
         try {
