@@ -1,0 +1,43 @@
+name: 'Rickroll on failure'
+description: 'Writes a rickroll in the run summary and, when possible, comments it on the pull request.'
+
+inputs:
+  github-token:
+    description: 'Token used to post the pull request comment (optional)'
+    required: false
+    default: ''
+  message:
+    description: 'Sentence shown before the video'
+    required: false
+    default: 'Un test a échoué. Voici ta récompense :'
+
+runs:
+  using: 'composite'
+  steps:
+    # Step 1: always works, needs no token and no permission.
+    - name: Rickroll in the run summary
+      shell: bash
+      env:
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        {
+          echo "### $MESSAGE"
+          echo ""
+          echo "[![Rick Astley](https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg)](https://youtu.be/dQw4w9WgXcQ)"
+          echo ""
+          echo "[Voir la vidéo](https://youtu.be/dQw4w9WgXcQ)"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    # Step 2: bonus, visible on the pull request. A failure here never changes the result of the workflow.
+    - name: Rickroll comment on the pull request (best effort)
+      if: github.event_name == 'pull_request' && inputs.github-token != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        MESSAGE: ${{ inputs.message }}
+      run: |
+        BODY="$(printf '%s\n\n[![Rick Astley](https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg)](https://youtu.be/dQw4w9WgXcQ)\n\n[Voir la vidéo](https://youtu.be/dQw4w9WgXcQ)' "$MESSAGE")"
+        gh pr comment "$PR_NUMBER" --body "$BODY"
