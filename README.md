@@ -1,250 +1,96 @@
-Welcome to Apache Tika  <https://tika.apache.org/>
-=================================================
+# Tâche 3 – IFT3913
 
-[![license](https://img.shields.io/github/license/apache/tika.svg?maxAge=2592000)](http://www.apache.org/licenses/LICENSE-2.0)
-[![Jenkins](https://img.shields.io/jenkins/s/https/ci-builds.apache.org/job/Tika/job/tika-main-jdk17.svg?maxAge=3600)](https://ci-builds.apache.org/job/Tika/job/tika-main-jdk17/)
-[![Jenkins tests](https://img.shields.io/jenkins/t/https/ci-builds.apache.org/job/Tika/job/tika-main-jdk17.svg?maxAge=3600)](https://ci-builds.apache.org/job/Tika/job/tika-main-jdk17/lastBuild/testReport/)
-[![Maven Central](https://img.shields.io/maven-central/v/org.apache.tika/tika.svg?maxAge=86400)](http://search.maven.org/#search|ga|1|g%3A%22org.apache.tika%22)
+## Partie 1 – Modification du workflow GitHub Actions avec Semgrep
 
-Apache Tika(TM) is a toolkit for detecting and extracting metadata and structured text content from various documents using existing parser libraries.
+### 1. Objectif
 
-Tika is a project of the [Apache Software Foundation](https://www.apache.org).
+Le workflow `.github/workflows/main-jdk17-build.yml` de Tika a été modifié pour que le build Maven ne se lance pas lorsqu'un changement introduit une nouvelle alerte détectée par Semgrep. Une alerte est nouvelle si elle n'existe pas dans un commit de référence : les alertes déjà présentes dans Tika ne bloquent donc pas le build.
 
-Apache Tika, Tika, Apache, the Apache feather logo, and the Apache Tika project logo are trademarks of The Apache Software Foundation.
+### 2. Choix de conception et d'implémentation
 
-Quick Start
-===========
+Le fichier contenait déjà un job `semgrep` avec les règles Java `p/java`. Le job `build` a reçu `needs: semgrep`, ce qui rend son démarrage dépendant de la réussite de l'analyse.
 
-**Parse a file in Java:**
+Choix de conception : `build` dépend de semgrep pour échouer rapidement et économiser des minutes. Le scan prend environ 30 secondes, alors que le build Maven complet en prend presque 40. Si `semgrep` échoue, `build` est ignoré, ainsi que `e2e-tests`, qui dépend du build.
 
-```java
-import org.apache.tika.Tika;
+La commande Semgrep utilise `--baseline-commit "$BASE_SHA"` pour trouver les alertes nouvelles. Pour une pull request, `BASE_SHA` est le SHA de la branche cible. Pour un push sur `main`, c'est le SHA de `main` juste avant le push, ce qui couvre aussi un push de plusieurs commits. Le checkout utilise `fetch-depth: 0` pour que Semgrep ait l'historique Git nécessaire, et `--error` fait renvoyer un code de sortie non nul à Semgrep lorsqu'il trouve une nouvelle alerte.
 
-Tika tika = new Tika();
-String text = tika.parseToString(new File("document.pdf"));
-System.out.println(text);
-```
+![Configuration du commit de référence et de la commande Semgrep](images/partie1-workflow-scan.png)
 
-**From the command line:**
+### 3. Validation sur GitHub Actions
 
-```bash
-java -jar tika-app-*.jar --text document.pdf
-```
+**Sans nouvelle alerte.** Sur un push vers `main` (exécution nº 4), le job `semgrep` a réussi en 34 secondes, puis l'étape `Build with Maven` a démarré.
 
-**Maven dependency:**
+![Analyse Semgrep réussie et démarrage du build Maven](images/partie1-validation-succes.png)
 
-```xml
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-parsers-standard-package</artifactId>
-    <version>4.x.y</version>
-    <type>pom</type>
-</dependency>
-```
+**Avec une alerte contrôlée.** La pull request nº 2, de `validation-semgrep` vers `main`, a ajouté temporairement une règle personnalisée (`validation-semgrep-ci`) qui cherche le marqueur `SEMGREP_CI_VALIDATION` dans un fichier Java. Semgrep l'a détecté à la ligne 2 de `SemgrepValidation.java`, absent du commit de référence, et a renvoyé le code de sortie `1`. Le job `semgrep` est en échec et `build` et `e2e-tests` sont ignorés : le blocage intervient avant Maven. Cette PR n'a pas été mergée dans `main`.
 
-Getting Started
-===============
-Pre-built binaries of Apache Tika standalone applications are available
-from https://tika.apache.org/download.html . Pre-built binaries of all the
-Tika jars can be fetched from Maven Central or your favourite Maven mirror.
+![Journal de la première exécution de la PR nº 2](images/partie1-execution-pr2.png)
 
-**Tika 2.X and support for Java 8 reached End of Life (EOL) in April, 2025. 
-See [Tika Roadmap 2.x, 3.x and beyond](https://cwiki.apache.org/confluence/display/TIKA/Tika+Roadmap+--+2.x%2C+3.x+and+Beyond).** 
+![Nouvelle alerte bloquante signalée par Semgrep dans la PR nº 2](images/partie1-validation-alerte.png)
 
-Tika is based on **Java 17** and uses the [Maven 3](https://maven.apache.org) build system.
-**N.B.** [Docker](https://www.docker.com/products/personal) is used for tests in tika-integration-tests. If Docker is not installed, those tests are skipped.
+**Avec les vraies vulnérabilités.** La pull request avec les 7 vulnérabilités de la partie 2 donne le même résultat. Après le merge dans `main`, le push fait aussi échouer `semgrep`.
 
-To build Tika from source, use the following command in the main directory:
+![Semgrep rouge sur la pull request avec les 7 vulnérabilités](docs/tache3/semgrep-rouge.png)
 
-    ./mvnw clean install
+![Semgrep rouge sur main après le merge](docs/tache3/semgrep-rouge-main.png)
 
-The Maven wrapper (`mvnw`) is included in the repository and will automatically download
-the correct Maven version if needed. On Windows, use `mvnw.cmd` instead.
+## Partie 2 – Sept types de vulnérabilités détectées par Semgrep
 
-The build consists of a number of components, including a standalone runnable jar that you can use to try out Tika features. You can run it like this:
+### 1. Choix des fichiers et des cas
 
-    java -jar tika-app/target/tika-app-*.jar --help
+Les 7 vulnérabilités sont dans `tika-core`, l'un des modules permis, chacune dans une méthode séparée et dans son propre commit. Trois conditions ont guidé le choix : un type de vulnérabilité différent des autres, une règle `p/java` différente pour la détecter, et du code qui a du sens dans le fichier où il est placé. Les cas viennent de catégories classiques : cryptographie, communications non chiffrées, injection et mauvaise configuration XML. Les trois cas de cryptographie (MD5, AES/ECB, RC4) sont séparés parce qu'ils visent trois faiblesses différentes (hachage, mode de chiffrement, algorithme) et qu'ils sont signalés par trois règles différentes.
 
+Quatre fichiers sont touchés, chacun choisi parce que sa classe fait déjà un travail lié à la vulnérabilité : calcul d'empreintes, chiffrement, ouverture de flux et lecture de XML.
 
-To build a specific project (for example, tika-server-standard):
+![Méthode ajoutée dans InputStreamDigester (MD5)](docs/tache3/vuln-digester.png)
 
-    ./mvnw clean install -am -pl :tika-server-standard
+![Méthodes ajoutées dans CryptoParser (AES/ECB et RC4)](docs/tache3/vuln-crypto.png)
 
-If the ossindex-maven-plugin is causing the build to fail because a dependency
-has now been discovered to have a vulnerability:
+![Méthodes ajoutées dans TikaInputStream (SQL, socket, SSLContext)](docs/tache3/vuln-tikainputstream.png)
 
-    ./mvnw clean install -Dossindex.skip
+![Méthode ajoutée dans XmlRootExtractor (XXE)](docs/tache3/vuln-xml.png)
 
+### 2. Justification des sept cas et résultats de Semgrep
 
-Faster Builds
-=============
+**1. MD5 – `InputStreamDigester.java`.** Fichier choisi : la classe calcule déjà des empreintes de flux. Méthode `newLegacyMessageDigest`. Type : algorithme de hachage cassé. MD5 a des collisions connues, donc il ne peut pas servir à vérifier l'intégrité. Semgrep la trouve à la ligne 82. Règle : `java.lang.security.audit.crypto.use-of-md5.use-of-md5`
 
-**Fast profile** - Use `-Pfast` to skip tests, checkstyle, and spotless:
+**2. AES/ECB – `CryptoParser.java`.** Fichier choisi : la classe gère déjà le chiffrement avec `Cipher`. Méthode `newLegacyCipher`, `AES/ECB/PKCS5Padding`. Type : mode de chiffrement non sécuritaire. ECB chiffre les blocs identiques de la même façon, ce qui laisse voir des motifs dans les données. Ligne 76. Règle : `java.lang.security.audit.crypto.use-of-aes-ecb.use-of-aes-ecb`
 
-    ./mvnw clean install -Pfast
+**3. RC4 – `CryptoParser.java`.** Même fichier que la 2, pour la même raison. Méthode `newOldExportCipher`. Type : algorithme de chiffrement faible. RC4 est considéré comme cassé. Ligne 83. Règle : `java.lang.security.audit.crypto.use-of-rc4.use-of-rc4`
 
-**Parallel builds** - Add `-T1C` to build with 1 thread per CPU core:
+**4. Injection SQL – `TikaInputStream.java`.** Fichier choisi : la classe ouvre des flux depuis plusieurs sources, donc un accès à une base de données ou au réseau y est plausible (même raison pour les vulnérabilités 5 et 6). Méthode `findDocumentRows`. Type : injection. La requête est construite en concaténant un paramètre, donc du SQL peut y être inséré. Un `PreparedStatement` serait nécessaire. Lignes 517-518. Règle : `java.lang.security.audit.formatted-sql-string.formatted-sql-string`
 
-    ./mvnw clean install -Pfast -T1C
+**5. Socket non chiffré – `TikaInputStream.java`.** Méthode `openRemoteConnection`. Type : transport en clair. Un `Socket` normal envoie tout sans chiffrement, donc les données peuvent être lues ou modifiées sur le réseau. Ligne 525. Règle : `java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket`
 
-**Maven Daemon (mvnd)** - Keeps a warm JVM running for 2-3x faster rebuilds:
+**6. SSLContext "SSL" – `TikaInputStream.java`.** Méthode `newDownloadContext`. Type : protocole obsolète. `"SSL"` peut donner de vieilles versions du protocole qui ont des failles, alors qu'il faudrait demander `TLSv1.2` ou `TLSv1.3`. Ligne 532. Règle : `java.lang.security.audit.weak-ssl-context.weak-ssl-context`
 
-```bash
-# Install: https://github.com/apache/maven-mvnd
-# macOS: brew install mvndaemon/tap/mvnd
+**7. XXE – `XmlRootExtractor.java`.** Fichier choisi : la classe fait déjà du parsing XML. Méthode `newQuickParser`. Type : entités XML externes. Le `SAXParserFactory` n'est pas configuré pour désactiver les DTD externes, donc un XML malicieux pourrait faire lire des fichiers du serveur. Ligne 118. Règle : `java.lang.security.audit.xxe.saxparserfactory-disallow-doctype-decl-missing.saxparserfactory-disallow-doctype-decl-missing`
 
-# Use exactly like mvn
-mvnd clean install -Pfast
-mvnd test -pl :tika-core
-```
+![Journal Semgrep avec les règles et les numéros de ligne des alertes](docs/tache3/semgrep-rouge-log.png)
 
-**Combine both** for maximum speed during development:
-
-    mvnd clean install -Pfast -T1C
-
-
-Reproducible Builds
-===================
-
-Apache Tika supports [reproducible builds](https://reproducible-builds.org/). This means
-that building the same source code with the same JDK version should produce
-byte-for-byte identical artifacts, regardless of the build machine or time.
-
-Key configuration:
-- `project.build.outputTimestamp` is set in `tika-parent/pom.xml`
-- All Maven plugins are configured to produce deterministic output
+## Partie 3 – Comparaison des rapports Semgrep avant et après
 
-To verify the build plan supports reproducibility:
+La même commande Semgrep (`p/java`) a été lancée avant et après les changements, et les deux fichiers JSON ont été gardés : [semgrep-avant.json](docs/tache3/semgrep-avant.json) et [semgrep-apres.json](docs/tache3/semgrep-apres.json).
 
-    ./mvnw artifact:check-buildplan
+Avant, il y avait 11 trouvailles. Après, il y en a 18 : 7 nouvelles et 0 qui ont disparu, donc exactement les 7 vulnérabilités de la partie 2. Les 11 anciennes sont identiques dans les deux rapports, et les 7 nouvelles sont identifiées par leur fichier et leur ligne dans `semgrep-apres.json`.
 
-To verify two builds produce identical artifacts:
+## Partie 4 – Rickroll quand un test échoue
 
-    ./mvnw clean install -DskipTests
-    mv ~/.m2/repository/org/apache/tika tika-build-1
-    ./mvnw clean install -DskipTests
-    diff -r tika-build-1 ~/.m2/repository/org/apache/tika
+Une action composite maison se trouve dans `.github/actions/rickroll/action.yml`. Une implémentation propre a été préférée à `random-rickroll`, qui est ancienne (node12) et demanderait de lui confier le token du dépôt. Elle est appelée dans le job `build` après « Build with Maven », avec `if: failure()`.
 
+Elle écrit d'abord le rickroll dans le résumé du run (`$GITHUB_STEP_SUMMARY`), ce qui marche toujours. Ensuite, si c'est une PR, elle poste un commentaire avec `gh pr comment`; cette partie est en `continue-on-error`, donc un problème de commentaire ne change pas le résultat du workflow.
 
-Maven Dependencies
-==================
+Preuve : sur une PR, le build a échoué (un test d'intégration S3 de Tika sans lien avec le code modifié, ce qui a servi de vrai échec) et le rickroll s'est affiché dans un commentaire de la PR et dans le résumé du run.
 
-Apache Tika provides *Bill of Material* (BOM) artifact to align Tika module versions and simplify version management. 
-To avoid convergence errors in your own project, import this
-bom or Tika's parent pom.xml in your dependency management section.
+![Commentaire rickroll sur la PR](docs/tache3/rickroll-commentaire.png)
 
-If you use Apache Maven:
+![Rickroll dans le résumé du run](docs/tache3/rickroll-resume.png)
 
-```xml
-<project>
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-       <groupId>org.apache.tika</groupId>
-       <artifactId>tika-bom</artifactId>
-       <version>4.x.y</version>
-       <type>pom</type>
-       <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
+Limite : l'action se déclenche pour n'importe quelle erreur du build, pas seulement pour un test qui échoue (par exemple le check RAT ou le javadoc).
 
-  <dependencies>
-    <dependency>
-      <groupId>org.apache.tika</groupId>
-      <artifactId>tika-parsers-standard-package</artifactId>
-      <type>pom</type>
-      <!-- version not required since BOM included -->
-    </dependency>
-  </dependencies>
-</project>
-```
+## Déclaration d'utilisation de l'IA
 
-For Gradle:
+Claude (Anthropic, 2026) a servi à comprendre Semgrep et GitHub Actions, à trouver des idées de vulnérabilités et à déboguer des commandes.
+Les modifications ont été appliquées et testées dans le dépôt, et les résultats ont été vérifiés dans Semgrep et GitHub.
 
-```kotlin
-dependencies {
-  implementation(platform("org.apache.tika:tika-bom:4.x.y"))
-
-  // version not required since bom (platform in Gradle terms)
-  implementation("org.apache.tika:tika-parsers-standard-package@pom")
-}
-```
-
-Migrating to 4.x
-================
-TBD
-
-Contributing
-============
-See [CONTRIBUTING.md](CONTRIBUTING.md) and https://tika.apache.org/contribute.html
-
-[![contributors](https://contributors-img.web.app/image?repo=apache/tika)](https://github.com/apache/tika/graphs/contributors)
-
-Building from a Specific Tag
-============================
-Let's assume that you want to build the 3.0.1 tag:
-```
-0. Download and install hub.github.com
-1. git clone https://github.com/apache/tika.git
-2. cd tika
-3. git checkout 3.0.1
-4. ./mvnw clean install
-```
-
-If a new vulnerability has been discovered between the date of the
-tag and the date you are building the tag, you may need to build with:
-
-```
-4. ./mvnw clean install -Dossindex.skip
-```
-
-If a local test is not working in your environment, please notify
- the project at dev@tika.apache.org. As an immediate workaround,
- you can turn off individual tests with e.g.:
-
-```
-4. ./mvnw clean install -Dossindex.skip -Dtest=\!UnpackerResourceTest#testPDFImages
-```
-
-License (see also LICENSE.txt)
-==============================
-
-Collective work: Copyright 2011 The Apache Software Foundation.
-
-Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with this work for additional information regarding copyright ownership.  The ASF licenses this file to You under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
-
-<https://www.apache.org/licenses/LICENSE-2.0>
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions and limitations under the License.
-
-Apache Tika includes a number of subcomponents with separate copyright notices and license terms. Your use of these subcomponents is subject to the terms and conditions of the licenses listed in the LICENSE.txt file.
-
-Export Control
-==============
-
-This distribution includes cryptographic software.  The country in which you currently reside may have restrictions on the import, possession, use, and/or re-export to another country, of encryption software.  BEFORE using any encryption software, please  check your country's laws, regulations and policies concerning the import, possession, or use, and re-export of encryption software, to  see if this is permitted.  See <http://www.wassenaar.org/> for more information.
-
-The U.S. Government Department of Commerce, Bureau of Industry and Security (BIS), has classified this software as Export Commodity Control Number (ECCN) 5D002.C.1, which includes information security software using or performing cryptographic functions with asymmetric algorithms.  The form and manner of this Apache Software Foundation distribution makes it eligible for export under the License Exception ENC Technology Software Unrestricted (TSU) exception (see the BIS Export Administration Regulations, Section 740.13) for both object code and source code.
-
-The following provides more details on the included cryptographic software:
-
-Apache Tika uses the Bouncy Castle generic encryption libraries for extracting text content and metadata from encrypted PDF files.  See <http://www.bouncycastle.org/> for more details on Bouncy Castle.  
-
-Mailing Lists
-=============
-
-* user@tika.apache.org - About using Tika
-* dev@tika.apache.org - About developing Tika
-
-Subscribe by sending a message to `{list}-subscribe@tika.apache.org`.
-
-Issue Tracker
-=============
-
-https://issues.apache.org/jira/browse/TIKA
-
-Security
-========
-
-See [SECURITY.md](SECURITY.md) and https://tika.apache.org/security.html
+Anthropic. (2026). *Claude* (Sonnet 5.5) [Modèle de langage]. https://claude.ai
